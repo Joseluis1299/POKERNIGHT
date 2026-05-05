@@ -1,0 +1,81 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    background: #020617;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    min-height: 100%;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100vh;
+    overflow-x: hidden;
+    background:
+      radial-gradient(circle at top, rgba(16, 185, 129, 0.18), transparent 28%),
+      radial-gradient(circle at right, rgba(59, 130, 246, 0.12), transparent 25%),
+      linear-gradient(180deg, #020617 0%, #030712 45%, #0f172a 100%);
+    color: #e2e8f0;
+  }
+
+  body,
+  #root {
+    min-height: 100vh;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    min-height: 48px;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply rounded-3xl border border-white/10 bg-slate-950/80 shadow-2xl shadow-slate-950/50 backdrop-blur-xl;
+  }
+
+  .field-shell {
+    @apply rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 transition focus-within:border-emerald-500/60 focus-within:ring-2 focus-within:ring-emerald-500/30;
+  }
+
+  .input-base {
+    @apply w-full bg-transparent text-base text-slate-100 outline-none placeholder:text-slate-500;
+  }
+
+  .primary-button {
+    @apply inline-flex min-h-12 items-center justify-center rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .secondary-button {
+    @apply inline-flex min-h-12 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/80 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-white/20 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+}
+
+.balance-flash {
+  animation: balance-flash 0.7s ease-out;
+}
+
+@keyframes balance-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+  }
+
+  100% {
+    box-shadow: 0 0 0 16px rgba(16, 185, 129, 0);
+  }
+}
