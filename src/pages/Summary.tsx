@@ -88,6 +88,10 @@ export default function Summary(): JSX.Element {
   const difference = roundCurrency(finalTotal - totalPot);
 
   useEffect(() => {
+    window.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+  }, [code]);
+
+  useEffect(() => {
     if (room?.status && room.status !== 'closed') {
       navigate(`/room/${code}`, { replace: true });
     }
