@@ -29,6 +29,9 @@ export default function Home(): JSX.Element {
             <Link className="secondary-button px-6" to="/join">
               Unirse a partida
             </Link>
+            <Link className="secondary-button px-6" to="/stats">
+              Ver estadisticas
+            </Link>
             {roomCode ? (
               <Link className="secondary-button px-6" to={`/room/${roomCode}`}>
                 Volver a {roomCode}

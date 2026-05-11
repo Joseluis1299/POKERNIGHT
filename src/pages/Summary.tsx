@@ -239,6 +239,9 @@ export default function Summary(): JSX.Element {
             <button className="primary-button" onClick={() => void copyToClipboard(summaryText)}>
               Copiar resumen
             </button>
+            <Link className="secondary-button" to="/stats">
+              Ver estadisticas
+            </Link>
             <a
               className="secondary-button"
               href={buildWhatsappShareUrl(summaryText)}

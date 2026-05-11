@@ -7,6 +7,7 @@ import CreateGame from './pages/CreateGame';
 import Home from './pages/Home';
 import JoinGame from './pages/JoinGame';
 import Room from './pages/Room';
+import Stats from './pages/Stats';
 import Summary from './pages/Summary';
 
 function detectStandalone(): boolean {
@@ -152,6 +153,7 @@ function AppShell(): JSX.Element {
           <Route path="/" element={<Home />} />
           <Route path="/create" element={<CreateGame />} />
           <Route path="/join" element={<JoinGame />} />
+          <Route path="/stats" element={<Stats />} />
           <Route path="/room/:code" element={<Room />} />
           <Route path="/room/:code/summary" element={<Summary />} />
           <Route path="*" element={<Navigate to="/" replace />} />
