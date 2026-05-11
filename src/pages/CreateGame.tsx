@@ -5,6 +5,7 @@ import QRShareModal from '../components/QRShareModal';
 import { useLocalPlayer } from '../hooks/useLocalPlayer';
 import { isSupabaseConfigured, supabase, supabaseConfigError } from '../lib/supabase';
 import {
+  APP_STORAGE_KEYS,
   buildRoomShareUrl,
   buildWhatsappShareUrl,
   copyToClipboard,
@@ -39,15 +40,72 @@ function parseParticipantNames(value: string): string[] {
     });
 }
 
+function formatParticipantNames(names: string[]): string {
+  return names.join('\n');
+}
+
+function excludeHostName(names: string[], hostName: string): string[] {
+  const normalizedHostName = hostName.trim().toLowerCase();
+
+  if (!normalizedHostName) {
+    return names;
+  }
+
+  return names.filter((name) => name.toLowerCase() !== normalizedHostName);
+}
+
+function readRegularPlayers(): string[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  const storedPlayers = window.localStorage.getItem(APP_STORAGE_KEYS.regularPlayers);
+
+  if (!storedPlayers) {
+    return [];
+  }
+
+  try {
+    const parsedPlayers: unknown = JSON.parse(storedPlayers);
+
+    if (!Array.isArray(parsedPlayers)) {
+      return [];
+    }
+
+    const playerNames = parsedPlayers.filter((player): player is string => typeof player === 'string');
+    return parseParticipantNames(playerNames.join('\n'));
+  } catch {
+    return [];
+  }
+}
+
+function persistRegularPlayers(names: string[]): string[] {
+  const normalizedNames = parseParticipantNames(names.join('\n'));
+
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(APP_STORAGE_KEYS.regularPlayers, JSON.stringify(normalizedNames));
+  }
+
+  return normalizedNames;
+}
+
+function clearRegularPlayers(): void {
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(APP_STORAGE_KEYS.regularPlayers);
+  }
+}
+
 export default function CreateGame(): JSX.Element {
   const navigate = useNavigate();
   const { deviceId, saveIdentity } = useLocalPlayer();
+  const initialRegularPlayers = useMemo(() => readRegularPlayers(), []);
+  const [regularPlayers, setRegularPlayers] = useState<string[]>(initialRegularPlayers);
   const [form, setForm] = useState({
     gameName: 'Poker del viernes',
     yourName: '',
     buyIn: '5',
     currency: '€',
-    participants: ''
+    participants: formatParticipantNames(initialRegularPlayers)
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,9 +133,40 @@ export default function CreateGame(): JSX.Element {
   }, [createdRoom]);
 
   const participantPreview = useMemo(
-    () => parseParticipantNames(form.participants),
-    [form.participants]
+    () => excludeHostName(parseParticipantNames(form.participants), form.yourName),
+    [form.participants, form.yourName]
   );
+
+  function handleUseRegularPlayers(): void {
+    setForm((current) => ({
+      ...current,
+      participants: formatParticipantNames(excludeHostName(regularPlayers, current.yourName))
+    }));
+    setError(null);
+  }
+
+  function handleSaveRegularPlayers(): void {
+    const nextRegularPlayers = excludeHostName(parseParticipantNames(form.participants), form.yourName);
+
+    if (nextRegularPlayers.length === 0) {
+      setError('Anade al menos un jugador en participantes antes de guardar la lista fija.');
+      return;
+    }
+
+    const savedPlayers = persistRegularPlayers(nextRegularPlayers);
+    setRegularPlayers(savedPlayers);
+    setForm((current) => ({
+      ...current,
+      participants: formatParticipantNames(savedPlayers)
+    }));
+    setError(null);
+  }
+
+  function handleClearRegularPlayers(): void {
+    clearRegularPlayers();
+    setRegularPlayers([]);
+    setError(null);
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -94,7 +183,7 @@ export default function CreateGame(): JSX.Element {
     const yourName = form.yourName.trim();
     const buyIn = Number(form.buyIn.replace(',', '.'));
     const currency = form.currency.trim() || '€';
-    const participantNames = parseParticipantNames(form.participants);
+    const participantNames = excludeHostName(parseParticipantNames(form.participants), yourName);
 
     if (!gameName || !yourName || !Number.isFinite(buyIn) || buyIn <= 0) {
       setError('Introduce un nombre de partida, tu nombre y una compra inicial valida.');
@@ -104,12 +193,6 @@ export default function CreateGame(): JSX.Element {
 
     if (!deviceId) {
       setError('No se ha podido preparar la identidad local de este dispositivo.');
-      setIsSubmitting(false);
-      return;
-    }
-
-    if (participantNames.some((name) => name.toLowerCase() === yourName.toLowerCase())) {
-      setError('No repitas tu nombre en la lista de participantes. Ya quedas como anfitrion.');
       setIsSubmitting(false);
       return;
     }
@@ -274,6 +357,56 @@ export default function CreateGame(): JSX.Element {
               </label>
             </div>
 
+            <div className="rounded-3xl border border-emerald-500/10 bg-emerald-500/5 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">Jugadores fijos</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Guarda aqui a los habituales. Cuando venga alguien nuevo, anadelo debajo solo
+                    para esa partida.
+                  </p>
+                </div>
+                {regularPlayers.length > 0 ? (
+                  <span className="w-fit rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                    {regularPlayers.length} guardados
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {regularPlayers.length > 0 ? (
+                  regularPlayers.map((playerName) => (
+                    <span
+                      className="rounded-full border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-200"
+                      key={playerName}
+                    >
+                      {playerName}
+                    </span>
+                  ))
+                ) : (
+                  <span className="rounded-full border border-dashed border-white/10 px-3 py-2 text-sm text-slate-500">
+                    Todavia no hay lista fija guardada en este dispositivo.
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                {regularPlayers.length > 0 ? (
+                  <button className="secondary-button px-4" onClick={handleUseRegularPlayers} type="button">
+                    Usar lista fija
+                  </button>
+                ) : null}
+                <button className="secondary-button px-4" onClick={handleSaveRegularPlayers} type="button">
+                  Guardar lista actual
+                </button>
+                {regularPlayers.length > 0 ? (
+                  <button className="secondary-button px-4" onClick={handleClearRegularPlayers} type="button">
+                    Borrar lista fija
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
             <label className="block text-sm font-medium text-slate-300">
               Participantes
               <div className="field-shell mt-2">
@@ -288,7 +421,8 @@ export default function CreateGame(): JSX.Element {
               </div>
               <p className="mt-2 text-xs text-slate-400">
                 Escribe un nombre por linea o separalos por comas. Luego cada persona elegira su
-                jugador desde el enlace.
+                jugador desde el enlace. Si tu nombre esta en la lista, se quita automaticamente de
+                participantes para no duplicarte.
               </p>
             </label>
 

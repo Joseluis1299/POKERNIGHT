@@ -5,6 +5,7 @@ export const APP_STORAGE_KEYS = {
   installBannerDismissed: 'pokernight.installBannerDismissed',
   playerId: 'pokernight.playerId',
   playerName: 'pokernight.playerName',
+  regularPlayers: 'pokernight.regularPlayers',
   roomCode: 'pokernight.roomCode',
   roomHost: 'pokernight.isHost'
 } as const;
