@@ -159,6 +159,7 @@ function getSupabaseFriendlyMessage(error: ErrorLike): string | null {
   if (
     combined.includes('fetch failed') ||
     combined.includes('failed to fetch') ||
+    combined.includes('load failed') ||
     combined.includes('network') ||
     combined.includes('getaddrinfo')
   ) {
