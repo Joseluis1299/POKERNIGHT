@@ -1,4 +1,4 @@
-import type { PlayerSummary, SettlementResult } from '../types';
+import type { DinnerExpense, PlayerSummary, SettlementResult } from '../types';
 
 export const APP_STORAGE_KEYS = {
   deviceId: 'pokernight.deviceId',
@@ -51,6 +51,16 @@ export function formatCurrency(amount: number | null | undefined, currency = 'â‚
   }
 
   return `${currency}${rounded.toFixed(2)}`;
+}
+
+export function formatSignedCurrency(amount: number, currency = 'â‚¬'): string {
+  const rounded = roundCurrency(amount);
+
+  if (isNearlyZero(rounded)) {
+    return formatCurrency(0, currency);
+  }
+
+  return `${rounded > 0 ? '+' : '-'}${formatCurrency(Math.abs(rounded), currency)}`;
 }
 
 export function formatDateTime(date: string): string {
@@ -139,6 +149,7 @@ function getSupabaseFriendlyMessage(error: ErrorLike): string | null {
     combined.includes("could not find the table 'public.rooms'") ||
     combined.includes("could not find the table 'public.players'") ||
     combined.includes("could not find the table 'public.rebuy_events'") ||
+    combined.includes("could not find the table 'public.dinner_expenses'") ||
     combined.includes("could not find the table 'public.settlements'") ||
     combined.includes('schema cache')
   ) {
@@ -181,7 +192,19 @@ export function buildSummaryText(
   roomName: string,
   currency: string,
   players: PlayerSummary[],
-  settlements: SettlementResult[]
+  settlements: SettlementResult[],
+  options: {
+    dinnerExpenses?: DinnerExpense[];
+    dinnerSettlements?: SettlementResult[];
+    globalRows?: Array<{
+      dinnerBalance: number;
+      globalBalance: number;
+      name: string;
+      pokerBalance: number;
+    }>;
+    globalSettlements?: SettlementResult[];
+    playerNames?: Record<string, string>;
+  } = {}
 ): string {
   const rankingLines = players
     .slice()
@@ -197,21 +220,58 @@ export function buildSummaryText(
       )}`;
     });
 
-  const settlementLines =
-    settlements.length > 0
-      ? settlements.map(
+  const formatSettlementLines = (
+    nextSettlements: SettlementResult[],
+    emptyText: string
+  ): string[] =>
+    nextSettlements.length > 0
+      ? nextSettlements.map(
           (settlement) =>
-            `${settlement.from} paga ${formatCurrency(settlement.amount, currency)} a ${
-              settlement.to
-            }`
+            `${settlement.from} paga ${formatCurrency(settlement.amount, currency)} a ${settlement.to}`
         )
-      : ['No hace falta ningun pago.'];
+      : [emptyText];
+
+  const activeDinnerExpenses = (options.dinnerExpenses ?? []).filter((expense) => !expense.deleted_at);
+  const playerNames = options.playerNames ?? {};
+  const dinnerExpenseLines =
+    activeDinnerExpenses.length > 0
+      ? activeDinnerExpenses.map((expense) => {
+          const paidBy = playerNames[expense.paid_by_player_id] ?? 'Jugador desconocido';
+          return `${expense.description}: ${paidBy} adelanto ${formatCurrency(expense.amount, currency)}`;
+        })
+      : ['Sin gastos de cena.'];
+  const globalRows = options.globalRows ?? [];
+  const globalDetailLines =
+    globalRows.length > 0
+      ? globalRows.map(
+          (row) =>
+            `${row.name} | Poker ${formatSignedCurrency(
+              row.pokerBalance,
+              currency
+            )} | Cena ${formatSignedCurrency(row.dinnerBalance, currency)} | Total ${formatSignedCurrency(
+              row.globalBalance,
+              currency
+            )}`
+        )
+      : ['Sin detalle global.'];
 
   return [
     `${roomName} - PokerNight`,
     '',
-    'Cuentas finales',
-    ...settlementLines,
+    'CUENTAS POKER',
+    ...formatSettlementLines(settlements, 'No hace falta ningun pago de poker.'),
+    '',
+    'GASTOS CENA',
+    ...dinnerExpenseLines,
+    '',
+    'CUENTAS CENA',
+    ...formatSettlementLines(options.dinnerSettlements ?? [], 'No hace falta ningun pago de cena.'),
+    '',
+    'CUENTA GLOBAL',
+    ...formatSettlementLines(options.globalSettlements ?? [], 'No hace falta ningun pago global.'),
+    '',
+    'DETALLE GLOBAL',
+    ...globalDetailLines,
     '',
     'Clasificacion final',
     ...rankingLines

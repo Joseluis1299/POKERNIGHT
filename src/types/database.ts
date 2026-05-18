@@ -9,6 +9,61 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      dinner_expenses: {
+        Row: {
+          amount: number;
+          created_at: string;
+          created_by_player_id: string;
+          deleted_at: string | null;
+          description: string;
+          id: string;
+          paid_by_player_id: string;
+          room_id: string;
+        };
+        Insert: {
+          amount: number;
+          created_at?: string;
+          created_by_player_id: string;
+          deleted_at?: string | null;
+          description?: string;
+          id?: string;
+          paid_by_player_id: string;
+          room_id: string;
+        };
+        Update: {
+          amount?: number;
+          created_at?: string;
+          created_by_player_id?: string;
+          deleted_at?: string | null;
+          description?: string;
+          id?: string;
+          paid_by_player_id?: string;
+          room_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'dinner_expenses_created_by_player_id_fkey';
+            columns: ['created_by_player_id'];
+            isOneToOne: false;
+            referencedRelation: 'players';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'dinner_expenses_paid_by_player_id_fkey';
+            columns: ['paid_by_player_id'];
+            isOneToOne: false;
+            referencedRelation: 'players';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'dinner_expenses_room_id_fkey';
+            columns: ['room_id'];
+            isOneToOne: false;
+            referencedRelation: 'rooms';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
       players: {
         Row: {
           claimed_at: string | null;

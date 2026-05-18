@@ -1,4 +1,4 @@
-import type { SettlementComputationInput, SettlementResult } from '../types';
+import type { SettlementBalanceInput, SettlementComputationInput, SettlementResult } from '../types';
 
 import { isNearlyZero, roundCurrency } from './utils';
 
@@ -11,10 +11,22 @@ interface BalanceNode {
 export function calculateSettlements(
   players: SettlementComputationInput[]
 ): SettlementResult[] {
-  const balances: BalanceNode[] = players.map((player) => ({
+  return calculateSettlementsFromBalances(
+    players.map((player) => ({
+      id: player.id,
+      name: player.name,
+      balance: roundCurrency(player.finalAmount - player.totalContributed)
+    }))
+  );
+}
+
+export function calculateSettlementsFromBalances(
+  playerBalances: SettlementBalanceInput[]
+): SettlementResult[] {
+  const balances: BalanceNode[] = playerBalances.map((player) => ({
     id: player.id,
     name: player.name,
-    balance: roundCurrency(player.finalAmount - player.totalContributed)
+    balance: roundCurrency(player.balance)
   }));
 
   const debtors = balances

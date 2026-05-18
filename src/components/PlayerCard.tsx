@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import PlayerAvatar from './PlayerAvatar';
 import type { PlayerSummary, RoomStatus } from '../types';
 
 import { formatCurrency, formatDateTime, formatTime } from '../lib/utils';
@@ -64,16 +65,19 @@ export default function PlayerCard({
       className={`rounded-[1.75rem] border border-white/10 bg-slate-900/90 p-5 shadow-xl shadow-slate-950/40 transition ${flash ? 'balance-flash' : ''}`}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-xl font-semibold text-white">{player.name}</h3>
-            {player.is_host ? <CrownIcon /> : null}
+        <div className="flex items-start gap-3">
+          <PlayerAvatar name={player.name} size="lg" />
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-semibold text-white">{player.name}</h3>
+              {player.is_host ? <CrownIcon /> : null}
+            </div>
+            <p className="mt-1 text-sm text-slate-400">
+              {isClaimed && player.claimed_at
+                ? `Conectado el ${formatDateTime(player.claimed_at)}`
+                : 'Pendiente de entrar desde el enlace'}
+            </p>
           </div>
-          <p className="mt-1 text-sm text-slate-400">
-            {isClaimed && player.claimed_at
-              ? `Conectado el ${formatDateTime(player.claimed_at)}`
-              : 'Pendiente de entrar desde el enlace'}
-          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 text-sm sm:w-[320px]">

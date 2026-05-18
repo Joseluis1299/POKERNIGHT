@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import PlayerAvatar from '../components/PlayerAvatar';
+import { REGULAR_PLAYER_NAMES, normalizePlayerNameKey } from '../lib/playerProfiles';
 import { isSupabaseConfigured, supabase, supabaseConfigError } from '../lib/supabase';
 import { formatCurrency, getErrorMessage, roundCurrency, sum } from '../lib/utils';
 import type { Player, RebuyEvent, Room } from '../types';
@@ -51,15 +53,6 @@ const CHART_COLORS = [
   '#22c55e'
 ];
 
-function normalizePlayerKey(name: string): string {
-  return name
-    .trim()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-}
-
 function formatShortDate(date: string): string {
   return new Intl.DateTimeFormat('es-ES', {
     day: '2-digit',
@@ -93,6 +86,10 @@ function buildPlayerTrends(
   }, {});
   const displayNames = new Map<string, string>();
 
+  REGULAR_PLAYER_NAMES.forEach((playerName) => {
+    displayNames.set(normalizePlayerNameKey(playerName), playerName);
+  });
+
   const games = roomsForCurrency.map<GameBalance>((room) => {
     const balances = new Map<string, number>();
     const roomPlayers = playersForRooms.filter((player) => player.room_id === room.id);
@@ -102,7 +99,7 @@ function buildPlayerTrends(
         return;
       }
 
-      const key = normalizePlayerKey(player.name);
+      const key = normalizePlayerNameKey(player.name);
       if (!displayNames.has(key)) {
         displayNames.set(key, player.name.trim());
       }
@@ -121,7 +118,10 @@ function buildPlayerTrends(
   });
 
   const playerKeys = Array.from(
-    new Set(games.flatMap((game) => Array.from(game.balances.keys())))
+    new Set([
+      ...REGULAR_PLAYER_NAMES.map((playerName) => normalizePlayerNameKey(playerName)),
+      ...games.flatMap((game) => Array.from(game.balances.keys()))
+    ])
   );
   const cumulativeByKey = playerKeys.reduce<Record<string, number>>((accumulator, key) => {
     accumulator[key] = 0;
@@ -268,6 +268,8 @@ export default function Stats(): JSX.Element {
   );
 
   const leader = trends[0] ?? null;
+  const positiveTotal = sum(trends.filter((trend) => trend.total > 0).map((trend) => trend.total));
+  const negativeTotal = sum(trends.filter((trend) => trend.total < 0).map((trend) => trend.total));
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8">
@@ -301,13 +303,15 @@ export default function Stats(): JSX.Element {
               agrupan automaticamente aunque alguien nuevo aparezca solo en algunas mesas.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
             <Metric label="Partidas" value={String(games.length)} />
             <Metric label="Jugadores" value={String(trends.length)} />
             <Metric
               label="Lider"
               value={leader ? formatCurrency(leader.total, selectedCurrency) : '--'}
             />
+            <Metric label="Positivo total" value={formatCurrency(positiveTotal, selectedCurrency)} />
+            <Metric label="Negativo total" value={formatCurrency(negativeTotal, selectedCurrency)} />
           </div>
         </div>
       </section>
@@ -353,8 +357,9 @@ export default function Stats(): JSX.Element {
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3">
+                    <PlayerAvatar name={trend.name} />
                     <span
-                      className="h-4 w-4 rounded-full"
+                      className="h-4 w-4 shrink-0 rounded-full"
                       style={{ backgroundColor: trend.color }}
                     />
                     <div>

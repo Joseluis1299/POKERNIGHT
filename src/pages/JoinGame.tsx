@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
+import PlayerAvatar from '../components/PlayerAvatar';
 import { useLocalPlayer } from '../hooks/useLocalPlayer';
 import { isSupabaseConfigured, supabase, supabaseConfigError } from '../lib/supabase';
 import { getErrorMessage, normalizeRoomCode } from '../lib/utils';
@@ -356,18 +357,21 @@ export default function JoinGame(): JSX.Element {
                           type="button"
                         >
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <p className="text-lg font-semibold text-white">
-                                {player.name}
-                                {player.is_host ? ' · anfitrion' : ''}
-                              </p>
-                              <p className="mt-1 text-sm text-slate-400">
-                                {isClaimedByCurrentDevice
-                                  ? 'Ya vinculado en este dispositivo.'
-                                  : isClaimedByOtherDevice
-                                    ? 'Ya vinculado desde otro dispositivo.'
-                                    : 'Disponible para entrar desde el enlace.'}
-                              </p>
+                            <div className="flex items-center gap-3">
+                              <PlayerAvatar name={player.name} />
+                              <div>
+                                <p className="text-lg font-semibold text-white">
+                                  {player.name}
+                                  {player.is_host ? ' · anfitrion' : ''}
+                                </p>
+                                <p className="mt-1 text-sm text-slate-400">
+                                  {isClaimedByCurrentDevice
+                                    ? 'Ya vinculado en este dispositivo.'
+                                    : isClaimedByOtherDevice
+                                      ? 'Ya vinculado desde otro dispositivo.'
+                                      : 'Disponible para entrar desde el enlace.'}
+                                </p>
+                              </div>
                             </div>
                             <span
                               className={`rounded-full px-3 py-1 text-xs font-semibold ${

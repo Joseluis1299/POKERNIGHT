@@ -7,7 +7,7 @@ PokerNight is a production-ready MVP web app / PWA for tracking a private poker 
 - React 18 + Vite + TypeScript strict mode
 - Tailwind CSS mobile-first UI
 - Supabase PostgreSQL schema with RLS, Realtime, and settlements storage
-- Live rooms, players, rebuys, closing flow, and final summary
+- Live rooms, players, rebuys, dinner expenses, closing flow, and final summary
 - PWA manifest + service worker for installable usage and offline read-only viewing
 - Sharing via room code, URL, QR code, and WhatsApp
 
@@ -21,6 +21,7 @@ PokerNight is a production-ready MVP web app / PWA for tracking a private poker 
    - `players`
    - `rebuy_events`
    - `settlements`
+   - `dinner_expenses`
 5. It also enables Row Level Security and adds the realtime publication entries for the live tables.
 
 ## 2. Enable Realtime on the Required Tables
@@ -32,6 +33,7 @@ The SQL file already adds the tables to the `supabase_realtime` publication, but
    - `rooms`
    - `players`
    - `rebuy_events`
+   - `dinner_expenses`
 3. If any table is missing, enable it there before testing the app.
 
 ## 3. Set Up `.env`

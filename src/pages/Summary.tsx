@@ -2,23 +2,30 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import LiveIndicator from '../components/LiveIndicator';
+import PlayerAvatar from '../components/PlayerAvatar';
 import SettlementList from '../components/SettlementList';
 import StatusBadge from '../components/StatusBadge';
+import { useDinnerExpenses } from '../hooks/useDinnerExpenses';
 import { useLocalPlayer } from '../hooks/useLocalPlayer';
 import { usePlayers } from '../hooks/usePlayers';
 import { useRebuys } from '../hooks/useRebuys';
 import { useRoom } from '../hooks/useRoom';
+import { calculateDinnerBalances } from '../lib/dinner';
+import { calculateSettlementsFromBalances } from '../lib/settlements';
 import { supabase } from '../lib/supabase';
 import {
   buildSummaryText,
   buildWhatsappShareUrl,
   copyToClipboard,
   formatCurrency,
+  formatSignedCurrency,
+  formatTime,
   getErrorMessage,
   roundCurrency,
-  sum
+  sum,
+  toNumber
 } from '../lib/utils';
-import type { PlayerSummary, RealtimeState, SettlementResult } from '../types';
+import type { DinnerExpense, PlayerSummary, RealtimeState, SettlementBalanceInput, SettlementResult } from '../types';
 
 function aggregateRealtimeState(states: RealtimeState[]): RealtimeState {
   if (states.some((state) => state === 'error')) {
@@ -36,6 +43,39 @@ function aggregateRealtimeState(states: RealtimeState[]): RealtimeState {
   return 'connecting';
 }
 
+interface GlobalBalanceRow {
+  dinnerBalance: number;
+  globalBalance: number;
+  id: string;
+  name: string;
+  pokerBalance: number;
+}
+
+function combineBalances(
+  players: PlayerSummary[],
+  dinnerBalances: SettlementBalanceInput[]
+): GlobalBalanceRow[] {
+  const dinnerByPlayerId = dinnerBalances.reduce<Record<string, number>>((accumulator, player) => {
+    accumulator[player.id] = player.balance;
+    return accumulator;
+  }, {});
+
+  return players
+    .map((player) => {
+      const pokerBalance = player.balance ?? 0;
+      const dinnerBalance = dinnerByPlayerId[player.id] ?? 0;
+
+      return {
+        dinnerBalance,
+        globalBalance: roundCurrency(pokerBalance + dinnerBalance),
+        id: player.id,
+        name: player.name,
+        pokerBalance
+      };
+    })
+    .sort((first, second) => second.globalBalance - first.globalBalance);
+}
+
 export default function Summary(): JSX.Element {
   const { code = '' } = useParams();
   const navigate = useNavigate();
@@ -50,14 +90,28 @@ export default function Summary(): JSX.Element {
   } = usePlayers(room?.id);
   const { rebuys, loading: rebuysLoading, error: rebuysError, realtimeState: rebuysState } =
     useRebuys(room?.id);
+  const {
+    addDinnerExpense,
+    dinnerExpenses,
+    error: dinnerError,
+    loading: dinnerLoading,
+    realtimeState: dinnerState,
+    softDeleteDinnerExpense
+  } = useDinnerExpenses(room?.id);
 
   const [settlements, setSettlements] = useState<SettlementResult[]>([]);
   const [settlementsLoading, setSettlementsLoading] = useState(true);
   const [settlementsError, setSettlementsError] = useState<string | null>(null);
   const [isReopening, setIsReopening] = useState(false);
+  const [dinnerForm, setDinnerForm] = useState({
+    amount: '',
+    description: 'Cena',
+    paidByPlayerId: ''
+  });
+  const [isSavingDinner, setIsSavingDinner] = useState(false);
 
-  const realtimeState = aggregateRealtimeState([roomState, playersState, rebuysState]);
-  const loading = roomLoading || playersLoading || rebuysLoading || settlementsLoading;
+  const realtimeState = aggregateRealtimeState([roomState, playersState, rebuysState, dinnerState]);
+  const loading = roomLoading || playersLoading || rebuysLoading || dinnerLoading || settlementsLoading;
 
   const playerSummaries = useMemo<PlayerSummary[]>(() => {
     return players
@@ -82,14 +136,61 @@ export default function Summary(): JSX.Element {
       .sort((first, second) => (second.balance ?? 0) - (first.balance ?? 0));
   }, [players, rebuys]);
 
+  const playerNames = useMemo<Record<string, string>>(
+    () =>
+      players.reduce<Record<string, string>>((accumulator, player) => {
+        accumulator[player.id] = player.name;
+        return accumulator;
+      }, {}),
+    [players]
+  );
+  const activeDinnerExpenses = useMemo<DinnerExpense[]>(
+    () => dinnerExpenses.filter((expense) => !expense.deleted_at),
+    [dinnerExpenses]
+  );
+  const dinnerBalances = useMemo(
+    () => calculateDinnerBalances(playerSummaries, dinnerExpenses),
+    [dinnerExpenses, playerSummaries]
+  );
+  const dinnerSettlements = useMemo(
+    () => calculateSettlementsFromBalances(dinnerBalances),
+    [dinnerBalances]
+  );
+  const globalRows = useMemo(
+    () => combineBalances(playerSummaries, dinnerBalances),
+    [dinnerBalances, playerSummaries]
+  );
+  const globalSettlements = useMemo(
+    () =>
+      calculateSettlementsFromBalances(
+        globalRows.map((row) => ({
+          balance: row.globalBalance,
+          id: row.id,
+          name: row.name
+        }))
+      ),
+    [globalRows]
+  );
   const isHost = Boolean(players.find((player) => player.id === playerId)?.is_host);
   const totalPot = sum(playerSummaries.map((player) => player.totalContributed));
   const finalTotal = sum(playerSummaries.map((player) => player.final_amount ?? 0));
   const difference = roundCurrency(finalTotal - totalPot);
+  const dinnerTotal = sum(activeDinnerExpenses.map((expense) => expense.amount));
 
   useEffect(() => {
     window.scrollTo({ left: 0, top: 0, behavior: 'auto' });
   }, [code]);
+
+  useEffect(() => {
+    if (dinnerForm.paidByPlayerId || players.length === 0) {
+      return;
+    }
+
+    setDinnerForm((current) => ({
+      ...current,
+      paidByPlayerId: players[0].id
+    }));
+  }, [dinnerForm.paidByPlayerId, players]);
 
   useEffect(() => {
     if (room?.status && room.status !== 'closed') {
@@ -119,11 +220,6 @@ export default function Summary(): JSX.Element {
         return;
       }
 
-      const playerNames = players.reduce<Record<string, string>>((accumulator, player) => {
-        accumulator[player.id] = player.name;
-        return accumulator;
-      }, {});
-
       setSettlements(
         data.map((settlement) => ({
           amount: settlement.amount,
@@ -138,7 +234,7 @@ export default function Summary(): JSX.Element {
     }
 
     void loadSettlements();
-  }, [players, room?.id]);
+  }, [playerNames, room?.id]);
 
   async function handleReopen(): Promise<void> {
     if (!room) {
@@ -170,6 +266,15 @@ export default function Summary(): JSX.Element {
         throw deleteSettlementsError;
       }
 
+      const { error: deleteDinnerError } = await supabase
+        .from('dinner_expenses')
+        .delete()
+        .eq('room_id', room.id);
+
+      if (deleteDinnerError) {
+        throw deleteDinnerError;
+      }
+
       const { error: roomUpdateError } = await updateRoom({
         status: 'active',
         closed_at: null
@@ -184,6 +289,63 @@ export default function Summary(): JSX.Element {
       setSettlementsError(getErrorMessage(reopenError));
     } finally {
       setIsReopening(false);
+    }
+  }
+
+  async function handleAddDinnerExpense(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    if (!room || !playerId || !isHost) {
+      setSettlementsError('Solo el anfitrion puede anadir gastos de cena.');
+      return;
+    }
+
+    const amount = roundCurrency(toNumber(dinnerForm.amount));
+
+    if (!dinnerForm.paidByPlayerId) {
+      setSettlementsError('Elige a quien se le debe la cena.');
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setSettlementsError('Introduce un importe de cena valido.');
+      return;
+    }
+
+    setIsSavingDinner(true);
+    setSettlementsError(null);
+
+    const { error } = await addDinnerExpense({
+      amount,
+      createdByPlayerId: playerId,
+      description: dinnerForm.description.trim() || 'Cena',
+      paidByPlayerId: dinnerForm.paidByPlayerId
+    });
+
+    if (error) {
+      setSettlementsError(error);
+    } else {
+      setDinnerForm((current) => ({
+        ...current,
+        amount: '',
+        description: 'Cena'
+      }));
+    }
+
+    setIsSavingDinner(false);
+  }
+
+  async function handleDeleteDinnerExpense(expenseId: string): Promise<void> {
+    const confirmed = window.confirm('Quieres eliminar este gasto de cena?');
+
+    if (!confirmed) {
+      return;
+    }
+
+    const { error } = await softDeleteDinnerExpense(expenseId);
+
+    if (error) {
+      setSettlementsError(error);
     }
   }
 
@@ -211,7 +373,13 @@ export default function Summary(): JSX.Element {
     );
   }
 
-  const summaryText = buildSummaryText(room.name, room.currency, playerSummaries, settlements);
+  const summaryText = buildSummaryText(room.name, room.currency, playerSummaries, settlements, {
+    dinnerExpenses,
+    dinnerSettlements,
+    globalRows,
+    globalSettlements,
+    playerNames
+  });
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8">
@@ -263,9 +431,9 @@ export default function Summary(): JSX.Element {
         </div>
       </div>
 
-      {roomError || playersError || rebuysError || settlementsError ? (
+      {roomError || playersError || rebuysError || dinnerError || settlementsError ? (
         <div className="mt-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-          {settlementsError ?? rebuysError ?? playersError ?? roomError}
+          {settlementsError ?? dinnerError ?? rebuysError ?? playersError ?? roomError}
         </div>
       ) : null}
 
@@ -276,6 +444,35 @@ export default function Summary(): JSX.Element {
           {formatCurrency(Math.abs(difference), room.currency)}.
         </div>
       ) : null}
+
+      <section className="glass-card mt-6 p-5 sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.35em] text-emerald-300">Cuentas completas</p>
+            <h2 className="mt-2 text-2xl font-bold text-white">Poker, cena y cuenta global</h2>
+            <p className="mt-2 max-w-2xl text-sm text-slate-300">
+              Este es el texto bueno para mandar al grupo: separa lo del poker, lo de la cena y al
+              final simplifica todo en una sola cuenta global.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button className="primary-button" onClick={() => void copyToClipboard(summaryText)}>
+              Copiar cuentas completas
+            </button>
+            <a
+              className="secondary-button"
+              href={buildWhatsappShareUrl(summaryText)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Enviar por WhatsApp
+            </a>
+          </div>
+        </div>
+        <pre className="mt-5 max-h-80 overflow-auto whitespace-pre-wrap rounded-3xl border border-white/10 bg-slate-950/80 p-4 text-xs leading-5 text-slate-300 sm:text-sm">
+          {summaryText}
+        </pre>
+      </section>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="glass-card p-5 sm:p-6">
@@ -296,7 +493,10 @@ export default function Summary(): JSX.Element {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Puesto {index + 1}</p>
-                    <p className="mt-2 text-lg font-semibold text-white">{player.name}</p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <PlayerAvatar name={player.name} />
+                      <p className="text-lg font-semibold text-white">{player.name}</p>
+                    </div>
                   </div>
                   <p
                     className={
@@ -331,7 +531,10 @@ export default function Summary(): JSX.Element {
                 key={player.id}
               >
                 <span className="font-semibold text-white">{index + 1}</span>
-                <span className="font-medium">{player.name}</span>
+                <span className="flex items-center gap-3 font-medium">
+                  <PlayerAvatar name={player.name} size="sm" />
+                  {player.name}
+                </span>
                 <span>{formatCurrency(player.totalContributed, room.currency)}</span>
                 <span>{formatCurrency(player.final_amount ?? 0, room.currency)}</span>
                 <span
@@ -349,11 +552,192 @@ export default function Summary(): JSX.Element {
         </div>
 
         <div className="glass-card p-5 sm:p-6">
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Pagos</p>
-          <h2 className="mt-2 text-2xl font-bold text-white">Quien paga a quien</h2>
+          <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Poker</p>
+          <h2 className="mt-2 text-2xl font-bold text-white">Cuentas poker</h2>
           <div className="mt-6">
             <SettlementList currency={room.currency} settlements={settlements} />
           </div>
+        </div>
+      </section>
+
+      <section className="mt-6 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+        <div className="glass-card p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Cena</p>
+              <h2 className="mt-2 text-2xl font-bold text-white">Gastos cena</h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Total cena {formatCurrency(dinnerTotal, room.currency)} repartido entre{' '}
+                {playerSummaries.length} jugadores.
+              </p>
+            </div>
+          </div>
+
+          {isHost ? (
+            <form className="mt-5 space-y-4" onSubmit={(event) => void handleAddDinnerExpense(event)}>
+              <label className="block text-sm font-medium text-slate-300">
+                A quien se le debe
+                <div className="field-shell mt-2">
+                  <select
+                    className="input-base"
+                    onChange={(event) =>
+                      setDinnerForm((current) => ({ ...current, paidByPlayerId: event.target.value }))
+                    }
+                    value={dinnerForm.paidByPlayerId}
+                  >
+                    {players.map((player) => (
+                      <option key={player.id} value={player.id}>
+                        {player.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </label>
+
+              <label className="block text-sm font-medium text-slate-300">
+                Importe total
+                <div className="field-shell mt-2">
+                  <input
+                    className="input-base"
+                    inputMode="decimal"
+                    onChange={(event) =>
+                      setDinnerForm((current) => ({ ...current, amount: event.target.value }))
+                    }
+                    placeholder="80"
+                    value={dinnerForm.amount}
+                  />
+                </div>
+              </label>
+
+              <label className="block text-sm font-medium text-slate-300">
+                Concepto
+                <div className="field-shell mt-2">
+                  <input
+                    className="input-base"
+                    onChange={(event) =>
+                      setDinnerForm((current) => ({ ...current, description: event.target.value }))
+                    }
+                    placeholder="Cena"
+                    value={dinnerForm.description}
+                  />
+                </div>
+              </label>
+
+              <button className="primary-button w-full" disabled={isSavingDinner} type="submit">
+                {isSavingDinner ? 'Anadiendo cena...' : 'Anadir gasto cena'}
+              </button>
+            </form>
+          ) : (
+            <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm text-slate-400">
+              Solo el anfitrion puede anadir o borrar gastos de cena.
+            </div>
+          )}
+
+          <div className="mt-5 space-y-3">
+            {activeDinnerExpenses.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/70 p-4 text-sm text-slate-400">
+                Todavia no hay gastos de cena.
+              </div>
+            ) : (
+              activeDinnerExpenses.map((expense) => (
+                <div
+                  className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-200"
+                  key={expense.id}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-semibold text-white">
+                        {expense.description} · {formatCurrency(expense.amount, room.currency)}
+                      </p>
+                      <p className="mt-1 text-slate-400">
+                        Se le debe a {playerNames[expense.paid_by_player_id] ?? 'Jugador desconocido'} ·{' '}
+                        {formatTime(expense.created_at)}
+                      </p>
+                    </div>
+                    {isHost ? (
+                      <button
+                        className="secondary-button border-rose-500/30 px-4 text-rose-100 hover:bg-rose-500/10"
+                        onClick={() => void handleDeleteDinnerExpense(expense.id)}
+                        type="button"
+                      >
+                        Eliminar
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="grid gap-6">
+          <div className="glass-card p-5 sm:p-6">
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Cena</p>
+            <h2 className="mt-2 text-2xl font-bold text-white">Cuentas cena</h2>
+            <div className="mt-6">
+              <SettlementList currency={room.currency} settlements={dinnerSettlements} />
+            </div>
+          </div>
+
+          <div className="glass-card p-5 sm:p-6">
+            <p className="text-xs uppercase tracking-[0.35em] text-emerald-300">Global</p>
+            <h2 className="mt-2 text-2xl font-bold text-white">Cuenta global final</h2>
+            <div className="mt-6">
+              <SettlementList currency={room.currency} settlements={globalSettlements} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="glass-card mt-6 p-5 sm:p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Detalle global</p>
+            <h2 className="mt-2 text-2xl font-bold text-white">Poker + cena por jugador</h2>
+          </div>
+          <p className="text-sm text-slate-400">{globalRows.length} jugadores</p>
+        </div>
+
+        <div className="mt-6 grid gap-3">
+          {globalRows.map((row) => (
+            <div
+              className="rounded-3xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-200"
+              key={row.id}
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  <PlayerAvatar name={row.name} />
+                  <div>
+                    <p className="font-semibold text-white">{row.name}</p>
+                    <p className="text-xs text-slate-500">Resultado combinado</p>
+                  </div>
+                </div>
+                <p
+                  className={
+                    row.globalBalance >= 0
+                      ? 'text-2xl font-black text-emerald-300'
+                      : 'text-2xl font-black text-rose-300'
+                  }
+                >
+                  {formatSignedCurrency(row.globalBalance, room.currency)}
+                </p>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <SummaryStat
+                  label="Poker"
+                  value={formatSignedCurrency(row.pokerBalance, room.currency)}
+                />
+                <SummaryStat
+                  label="Cena"
+                  value={formatSignedCurrency(row.dinnerBalance, room.currency)}
+                />
+                <SummaryStat
+                  label="Global"
+                  value={formatSignedCurrency(row.globalBalance, room.currency)}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       </section>
     </main>

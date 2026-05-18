@@ -15,6 +15,9 @@ export type RebuyUpdate = Database['public']['Tables']['rebuy_events']['Update']
 export type Settlement = Database['public']['Tables']['settlements']['Row'];
 export type SettlementInsert = Database['public']['Tables']['settlements']['Insert'];
 
+export type DinnerExpense = Database['public']['Tables']['dinner_expenses']['Row'];
+export type DinnerExpenseInsert = Database['public']['Tables']['dinner_expenses']['Insert'];
+
 export type RoomStatus = Database['public']['Enums']['room_status'];
 
 export interface LocalPlayerIdentity {
@@ -45,6 +48,12 @@ export interface SettlementComputationInput {
   id: string;
   name: string;
   totalContributed: number;
+}
+
+export interface SettlementBalanceInput {
+  balance: number;
+  id: string;
+  name: string;
 }
 
 export interface CloseGamePlayerInput {

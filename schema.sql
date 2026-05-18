@@ -64,17 +64,31 @@ create table if not exists public.settlements (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.dinner_expenses (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.rooms(id) on delete cascade,
+  paid_by_player_id uuid not null references public.players(id) on delete cascade,
+  amount numeric(12, 2) not null check (amount > 0),
+  description text not null default 'Cena',
+  created_by_player_id uuid not null references public.players(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
 create index if not exists rooms_code_idx on public.rooms (code);
 create index if not exists rooms_status_idx on public.rooms (status);
 create index if not exists players_room_id_idx on public.players (room_id);
 create index if not exists rebuy_events_room_id_idx on public.rebuy_events (room_id);
 create index if not exists rebuy_events_player_id_idx on public.rebuy_events (player_id);
 create index if not exists settlements_room_id_idx on public.settlements (room_id);
+create index if not exists dinner_expenses_room_id_idx on public.dinner_expenses (room_id);
+create index if not exists dinner_expenses_paid_by_player_id_idx on public.dinner_expenses (paid_by_player_id);
 
 alter table public.rooms enable row level security;
 alter table public.players enable row level security;
 alter table public.rebuy_events enable row level security;
 alter table public.settlements enable row level security;
+alter table public.dinner_expenses enable row level security;
 
 drop policy if exists "rooms_select" on public.rooms;
 create policy "rooms_select"
@@ -170,6 +184,31 @@ create policy "settlements_delete"
   for delete
   using (true);
 
+drop policy if exists "dinner_expenses_select" on public.dinner_expenses;
+create policy "dinner_expenses_select"
+  on public.dinner_expenses
+  for select
+  using (true);
+
+drop policy if exists "dinner_expenses_insert" on public.dinner_expenses;
+create policy "dinner_expenses_insert"
+  on public.dinner_expenses
+  for insert
+  with check (true);
+
+drop policy if exists "dinner_expenses_update" on public.dinner_expenses;
+create policy "dinner_expenses_update"
+  on public.dinner_expenses
+  for update
+  using (true)
+  with check (true);
+
+drop policy if exists "dinner_expenses_delete" on public.dinner_expenses;
+create policy "dinner_expenses_delete"
+  on public.dinner_expenses
+  for delete
+  using (true);
+
 comment on column public.rooms.host_player_id is
   'Client-managed reference to the host player. Kept as UUID instead of a foreign key to allow room creation before player insert.';
 
@@ -192,6 +231,14 @@ $$;
 do $$
 begin
   alter publication supabase_realtime add table public.rebuy_events;
+exception
+  when duplicate_object then null;
+end
+$$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.dinner_expenses;
 exception
   when duplicate_object then null;
 end

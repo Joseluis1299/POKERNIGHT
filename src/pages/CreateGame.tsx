@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import QRShareModal from '../components/QRShareModal';
 import { useLocalPlayer } from '../hooks/useLocalPlayer';
+import { REGULAR_PLAYER_NAMES } from '../lib/playerProfiles';
 import { isSupabaseConfigured, supabase, supabaseConfigError } from '../lib/supabase';
 import {
   APP_STORAGE_KEYS,
@@ -62,7 +63,7 @@ function readRegularPlayers(): string[] {
   const storedPlayers = window.localStorage.getItem(APP_STORAGE_KEYS.regularPlayers);
 
   if (!storedPlayers) {
-    return [];
+    return [...REGULAR_PLAYER_NAMES];
   }
 
   try {
@@ -91,7 +92,7 @@ function persistRegularPlayers(names: string[]): string[] {
 
 function clearRegularPlayers(): void {
   if (typeof window !== 'undefined') {
-    window.localStorage.removeItem(APP_STORAGE_KEYS.regularPlayers);
+    window.localStorage.setItem(APP_STORAGE_KEYS.regularPlayers, JSON.stringify([]));
   }
 }
 
