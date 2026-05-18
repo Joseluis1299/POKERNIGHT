@@ -19,6 +19,16 @@ interface CreatedRoomState {
   shareUrl: string;
 }
 
+interface CreateGameFormState {
+  buyIn: string;
+  currency: string;
+  gameName: string;
+  participants: string;
+  yourName: string;
+}
+
+const CUSTOM_HOST_VALUE = '__custom_host__';
+
 function parseParticipantNames(value: string): string[] {
   const seen = new Set<string>();
 
@@ -66,11 +76,11 @@ function buildParticipantNames(
 export default function CreateGame(): JSX.Element {
   const navigate = useNavigate();
   const { deviceId, saveIdentity } = useLocalPlayer();
-  const fixedPlayerOptions = useMemo(() => [...REGULAR_PLAYER_NAMES], []);
+  const fixedPlayerOptions = useMemo<string[]>(() => [...REGULAR_PLAYER_NAMES], []);
   const [selectedFixedPlayers, setSelectedFixedPlayers] = useState<string[]>(fixedPlayerOptions);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<CreateGameFormState>({
     gameName: 'Poker del viernes',
-    yourName: '',
+    yourName: fixedPlayerOptions[0] ?? '',
     buyIn: '5',
     currency: '€',
     participants: ''
@@ -104,6 +114,11 @@ export default function CreateGame(): JSX.Element {
     () => buildParticipantNames(selectedFixedPlayers, form.participants, form.yourName),
     [form.participants, form.yourName, selectedFixedPlayers]
   );
+  const hostSelectValue = fixedPlayerOptions.includes(
+    form.yourName
+  )
+    ? form.yourName
+    : CUSTOM_HOST_VALUE;
 
   function handleToggleFixedPlayer(playerName: string): void {
     setSelectedFixedPlayers((current) => {
@@ -144,7 +159,7 @@ export default function CreateGame(): JSX.Element {
     const participantNames = buildParticipantNames(selectedFixedPlayers, form.participants, yourName);
 
     if (!gameName || !yourName || !Number.isFinite(buyIn) || buyIn <= 0) {
-      setError('Introduce un nombre de partida, tu nombre y una compra inicial valida.');
+      setError('Introduce un nombre de partida, elige quien eres y revisa que la compra inicial sea valida.');
       setIsSubmitting(false);
       return;
     }
@@ -271,18 +286,44 @@ export default function CreateGame(): JSX.Element {
             </label>
 
             <label className="block text-sm font-medium text-slate-300">
-              Tu nombre
+              Quien crea la partida
               <div className="field-shell mt-2">
-                <input
+                <select
                   className="input-base"
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, yourName: event.target.value }))
-                  }
-                  placeholder="Juan"
-                  value={form.yourName}
-                />
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setForm((current) => ({
+                      ...current,
+                      yourName: nextValue === CUSTOM_HOST_VALUE ? '' : nextValue
+                    }));
+                  }}
+                  value={hostSelectValue}
+                >
+                  {fixedPlayerOptions.map((playerName) => (
+                    <option key={playerName} value={playerName}>
+                      {playerName}
+                    </option>
+                  ))}
+                  <option value={CUSTOM_HOST_VALUE}>Otro nombre</option>
+                </select>
               </div>
             </label>
+
+            {hostSelectValue === CUSTOM_HOST_VALUE ? (
+              <label className="block text-sm font-medium text-slate-300">
+                Nombre del anfitrion
+                <div className="field-shell mt-2">
+                  <input
+                    className="input-base"
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, yourName: event.target.value }))
+                    }
+                    placeholder="Juan"
+                    value={form.yourName}
+                  />
+                </div>
+              </label>
+            ) : null}
 
             <div className="grid gap-5 sm:grid-cols-2">
               <label className="block text-sm font-medium text-slate-300">
