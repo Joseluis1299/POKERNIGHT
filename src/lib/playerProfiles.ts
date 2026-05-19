@@ -21,7 +21,7 @@ const PLAYER_PHOTOS: Record<string, string> = {
   'mario moral': 'players/mario-moral.jpg',
   franchoje: 'players/franchoje.jpg',
   'carlos ruiz': 'players/carlos-ruiz.jpg',
-  'pablo cabanas': 'players/pablo-cabanas.jpg',
+  'pablo cabanas': 'players/pablo-cabanas-clean.jpg',
   thiago: 'players/thiago.jpg',
   costin: 'players/costin.jpg',
   fortu: 'players/fortu.jpg'
