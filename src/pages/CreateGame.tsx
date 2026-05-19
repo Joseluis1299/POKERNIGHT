@@ -20,7 +20,6 @@ interface CreatedRoomState {
 }
 
 interface CreateGameFormState {
-  buyIn: string;
   currency: string;
   gameName: string;
 }
@@ -79,7 +78,6 @@ export default function CreateGame(): JSX.Element {
   });
   const [form, setForm] = useState<CreateGameFormState>({
     gameName: 'Poker del viernes',
-    buyIn: DEFAULT_BUY_IN,
     currency: '€'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -190,7 +188,7 @@ export default function CreateGame(): JSX.Element {
         name: playerName
       }
     ]);
-    setNewPlayer({ buyIn: form.buyIn || DEFAULT_BUY_IN, name: '' });
+    setNewPlayer({ buyIn: DEFAULT_BUY_IN, name: '' });
     setError(null);
   }
 
@@ -217,14 +215,14 @@ export default function CreateGame(): JSX.Element {
     setIsSubmitting(true);
 
     const gameName = form.gameName.trim();
-    const defaultBuyIn = toMoney(form.buyIn);
+    const defaultBuyIn = toMoney(DEFAULT_BUY_IN);
     const currency = form.currency.trim() || '€';
     const hostPlayer = hostDraft;
     const activePlayers = selectedDrafts;
     const invalidPlayer = activePlayers.find((player) => toMoney(player.buyIn) <= 0);
 
-    if (!gameName || !hostPlayer || !Number.isFinite(defaultBuyIn) || defaultBuyIn <= 0) {
-      setError('Introduce un nombre de partida, elige el anfitrion y revisa la recompra por defecto.');
+    if (!gameName || !hostPlayer) {
+      setError('Introduce un nombre de partida y elige el anfitrion.');
       setIsSubmitting(false);
       return;
     }
@@ -382,39 +380,22 @@ export default function CreateGame(): JSX.Element {
               </p>
             </label>
 
-            <div className="grid gap-5 sm:grid-cols-2">
-              <label className="block text-sm font-medium text-slate-300">
-                Recompra por defecto
-                <div className="field-shell mt-2">
-                  <input
-                    className="input-base"
-                    inputMode="decimal"
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, buyIn: event.target.value }))
-                    }
-                    placeholder="5"
-                    value={form.buyIn}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-slate-400">
-                  Esta cantidad se usara como valor rapido al anadir recompras durante la partida.
-                </p>
-              </label>
-
-              <label className="block text-sm font-medium text-slate-300">
-                Moneda
-                <div className="field-shell mt-2">
-                  <input
-                    className="input-base"
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, currency: event.target.value }))
-                    }
-                    placeholder="€"
-                    value={form.currency}
-                  />
-                </div>
-              </label>
-            </div>
+            <label className="block text-sm font-medium text-slate-300">
+              Moneda
+              <div className="field-shell mt-2">
+                <input
+                  className="input-base"
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, currency: event.target.value }))
+                  }
+                  placeholder="€"
+                  value={form.currency}
+                />
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
+                Las recompras rapidas durante la partida quedan por defecto en 5€.
+              </p>
+            </label>
 
             <div className="rounded-3xl border border-emerald-500/10 bg-emerald-500/5 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
