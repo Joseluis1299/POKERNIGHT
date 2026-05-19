@@ -228,9 +228,9 @@ export function buildSummaryText(
     nextSettlements.length > 0
       ? nextSettlements.map(
           (settlement) =>
-            `${settlement.from} paga ${formatCurrency(settlement.amount, currency)} a ${settlement.to}`
+            `- ${settlement.from} debe ${formatCurrency(settlement.amount, currency)} a ${settlement.to}`
         )
-      : [emptyText];
+      : [`- ${emptyText}`];
 
   const activeDinnerExpenses = (options.dinnerExpenses ?? []).filter((expense) => !expense.deleted_at);
   const playerNames = options.playerNames ?? {};
@@ -262,19 +262,19 @@ export function buildSummaryText(
     'CUENTAS POKER',
     ...formatSettlementLines(settlements, 'No hace falta ningun pago de poker.'),
     '',
-    'GASTOS CENA',
-    ...dinnerExpenseLines,
-    '',
     'CUENTAS CENA',
     ...formatSettlementLines(options.dinnerSettlements ?? [], 'No hace falta ningun pago de cena.'),
     '',
-    'CUENTA GLOBAL',
+    'CUENTA GLOBAL (POKER + CENA)',
     ...formatSettlementLines(options.globalSettlements ?? [], 'No hace falta ningun pago global.'),
     '',
-    'DETALLE GLOBAL',
+    'DETALLE GLOBAL POR JUGADOR',
     ...globalDetailLines,
     '',
-    'Clasificacion final',
+    'GASTOS CENA',
+    ...dinnerExpenseLines,
+    '',
+    'CLASIFICACION POKER',
     ...rankingLines
   ].join('\n');
 }

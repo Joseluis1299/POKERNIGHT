@@ -451,8 +451,8 @@ export default function Summary(): JSX.Element {
             <p className="text-xs uppercase tracking-[0.35em] text-emerald-300">Cuentas completas</p>
             <h2 className="mt-2 text-2xl font-bold text-white">Poker, cena y cuenta global</h2>
             <p className="mt-2 max-w-2xl text-sm text-slate-300">
-              Este es el texto bueno para mandar al grupo: separa lo del poker, lo de la cena y al
-              final simplifica todo en una sola cuenta global.
+              Primero se ven las cuentas por separado y abajo queda la cuenta global buena: esa es
+              la que normalmente se manda para pagar una sola vez.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -469,6 +469,31 @@ export default function Summary(): JSX.Element {
             </a>
           </div>
         </div>
+
+        <div className="mt-6 grid gap-4 xl:grid-cols-3">
+          <AccountSummaryCard
+            accent="slate"
+            currency={room.currency}
+            emptyText="No hace falta ningun pago de poker."
+            label="Cuentas poker"
+            settlements={settlements}
+          />
+          <AccountSummaryCard
+            accent="amber"
+            currency={room.currency}
+            emptyText="No hace falta ningun pago de cena."
+            label="Cuentas cena"
+            settlements={dinnerSettlements}
+          />
+          <AccountSummaryCard
+            accent="emerald"
+            currency={room.currency}
+            emptyText="No hace falta ningun pago global."
+            label="Cuenta global"
+            settlements={globalSettlements}
+          />
+        </div>
+
         <pre className="mt-5 max-h-80 overflow-auto whitespace-pre-wrap rounded-3xl border border-white/10 bg-slate-950/80 p-4 text-xs leading-5 text-slate-300 sm:text-sm">
           {summaryText}
         </pre>
@@ -754,6 +779,40 @@ function SummaryStat({ label, value }: SummaryStatProps): JSX.Element {
     <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-3">
       <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</p>
       <p className="mt-2 font-semibold text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+interface AccountSummaryCardProps {
+  accent: 'amber' | 'emerald' | 'slate';
+  currency: string;
+  emptyText: string;
+  label: string;
+  settlements: SettlementResult[];
+}
+
+const ACCOUNT_CARD_ACCENTS: Record<AccountSummaryCardProps['accent'], string> = {
+  amber: 'border-amber-500/20 bg-amber-500/5 text-amber-200',
+  emerald: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200',
+  slate: 'border-white/10 bg-slate-950/60 text-slate-200'
+};
+
+function AccountSummaryCard({
+  accent,
+  currency,
+  emptyText,
+  label,
+  settlements
+}: AccountSummaryCardProps): JSX.Element {
+  return (
+    <div className={`rounded-3xl border p-4 ${ACCOUNT_CARD_ACCENTS[accent]}`}>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="text-lg font-black text-white">{label}</h3>
+        <span className="rounded-full border border-white/10 bg-slate-950/70 px-3 py-1 text-xs font-semibold text-slate-300">
+          {settlements.length} pagos
+        </span>
+      </div>
+      <SettlementList currency={currency} emptyText={emptyText} settlements={settlements} />
     </div>
   );
 }
