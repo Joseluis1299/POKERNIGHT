@@ -23,67 +23,64 @@ interface CreateGameFormState {
   buyIn: string;
   currency: string;
   gameName: string;
-  participants: string;
-  yourName: string;
 }
 
-const CUSTOM_HOST_VALUE = '__custom_host__';
+interface PlayerDraft {
+  buyIn: string;
+  enabled: boolean;
+  fixed: boolean;
+  id: string;
+  name: string;
+}
 
-function parseParticipantNames(value: string): string[] {
-  const seen = new Set<string>();
+interface NewPlayerFormState {
+  buyIn: string;
+  name: string;
+}
 
+const DEFAULT_BUY_IN = '5';
+
+function normalizeName(value: string): string {
   return value
-    .split(/[\n,;]+/)
-    .map((name) => name.trim())
-    .filter((name) => {
-      if (name.length < 2) {
-        return false;
-      }
-
-      const normalized = name.toLowerCase();
-      if (seen.has(normalized)) {
-        return false;
-      }
-
-      seen.add(normalized);
-      return true;
-    });
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
 }
 
-function excludeHostName(names: string[], hostName: string): string[] {
-  const normalizedHostName = hostName.trim().toLowerCase();
-
-  if (!normalizedHostName) {
-    return names;
-  }
-
-  return names.filter((name) => name.toLowerCase() !== normalizedHostName);
+function createDraftId(name: string): string {
+  return `player-${normalizeName(name).replace(/[^a-z0-9]+/g, '-')}`;
 }
 
-function buildParticipantNames(
-  selectedFixedPlayers: string[],
-  extraParticipants: string,
-  hostName: string
-): string[] {
-  const selectedNames = [...selectedFixedPlayers, ...parseParticipantNames(extraParticipants)];
+function createInitialPlayerDrafts(): PlayerDraft[] {
+  return REGULAR_PLAYER_NAMES.map((playerName) => ({
+    buyIn: DEFAULT_BUY_IN,
+    enabled: true,
+    fixed: true,
+    id: createDraftId(playerName),
+    name: playerName
+  }));
+}
 
-  return excludeHostName(
-    parseParticipantNames(selectedNames.join('\n')),
-    hostName
-  );
+function toMoney(value: string): number {
+  const parsed = Number(value.replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export default function CreateGame(): JSX.Element {
   const navigate = useNavigate();
   const { deviceId, saveIdentity } = useLocalPlayer();
-  const fixedPlayerOptions = useMemo<string[]>(() => [...REGULAR_PLAYER_NAMES], []);
-  const [selectedFixedPlayers, setSelectedFixedPlayers] = useState<string[]>(fixedPlayerOptions);
+  const [playerDrafts, setPlayerDrafts] = useState<PlayerDraft[]>(() => createInitialPlayerDrafts());
+  const [hostDraftId, setHostDraftId] = useState(() => createDraftId(REGULAR_PLAYER_NAMES[0]));
+  const [newPlayer, setNewPlayer] = useState<NewPlayerFormState>({
+    buyIn: DEFAULT_BUY_IN,
+    name: ''
+  });
   const [form, setForm] = useState<CreateGameFormState>({
     gameName: 'Poker del viernes',
-    yourName: fixedPlayerOptions[0] ?? '',
-    buyIn: '5',
-    currency: '€',
-    participants: ''
+    buyIn: DEFAULT_BUY_IN,
+    currency: '€'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,35 +107,102 @@ export default function CreateGame(): JSX.Element {
     return `Unete a "${createdRoom.name}" en PokerNight. Codigo: ${createdRoom.code}. ${createdRoom.shareUrl}`;
   }, [createdRoom]);
 
-  const participantPreview = useMemo(
-    () => buildParticipantNames(selectedFixedPlayers, form.participants, form.yourName),
-    [form.participants, form.yourName, selectedFixedPlayers]
+  const hostDraft = useMemo(
+    () => playerDrafts.find((player) => player.id === hostDraftId) ?? playerDrafts[0] ?? null,
+    [hostDraftId, playerDrafts]
   );
-  const hostSelectValue = fixedPlayerOptions.includes(
-    form.yourName
-  )
-    ? form.yourName
-    : CUSTOM_HOST_VALUE;
+  const selectedDrafts = useMemo(
+    () => playerDrafts.filter((player) => player.enabled || player.id === hostDraft?.id),
+    [hostDraft?.id, playerDrafts]
+  );
 
-  function handleToggleFixedPlayer(playerName: string): void {
-    setSelectedFixedPlayers((current) => {
-      if (current.includes(playerName)) {
-        return current.filter((name) => name !== playerName);
+  function handleHostChange(nextHostId: string): void {
+    setHostDraftId(nextHostId);
+    setPlayerDrafts((current) =>
+      current.map((player) =>
+        player.id === nextHostId ? { ...player, enabled: true } : player
+      )
+    );
+    setError(null);
+  }
+
+  function handleTogglePlayer(playerId: string): void {
+    if (playerId === hostDraft?.id) {
+      return;
+    }
+
+    setPlayerDrafts((current) =>
+      current.map((player) =>
+        player.id === playerId ? { ...player, enabled: !player.enabled } : player
+      )
+    );
+    setError(null);
+  }
+
+  function handlePlayerBuyInChange(playerId: string, buyIn: string): void {
+    setPlayerDrafts((current) =>
+      current.map((player) => (player.id === playerId ? { ...player, buyIn } : player))
+    );
+    setError(null);
+  }
+
+  function handleSelectAllPlayers(): void {
+    setPlayerDrafts((current) => current.map((player) => ({ ...player, enabled: true })));
+    setError(null);
+  }
+
+  function handleClearPlayers(): void {
+    setPlayerDrafts((current) =>
+      current.map((player) => ({
+        ...player,
+        enabled: player.id === hostDraft?.id
+      }))
+    );
+    setError(null);
+  }
+
+  function handleAddPlayer(): void {
+    const playerName = newPlayer.name.trim();
+    const playerBuyIn = toMoney(newPlayer.buyIn);
+
+    if (playerName.length < 2) {
+      setError('Escribe un nombre valido para anadir un jugador.');
+      return;
+    }
+
+    if (!Number.isFinite(playerBuyIn) || playerBuyIn <= 0) {
+      setError('Introduce un importe inicial valido para el jugador nuevo.');
+      return;
+    }
+
+    if (playerDrafts.some((player) => normalizeName(player.name) === normalizeName(playerName))) {
+      setError('Ese jugador ya esta en la lista.');
+      return;
+    }
+
+    setPlayerDrafts((current) => [
+      ...current,
+      {
+        buyIn: newPlayer.buyIn,
+        enabled: true,
+        fixed: false,
+        id: `custom-${crypto.randomUUID()}`,
+        name: playerName
       }
-
-      return [...current, playerName];
-    });
+    ]);
+    setNewPlayer({ buyIn: form.buyIn || DEFAULT_BUY_IN, name: '' });
     setError(null);
   }
 
-  function handleSelectAllFixedPlayers(): void {
-    setSelectedFixedPlayers(fixedPlayerOptions);
-    setError(null);
-  }
+  function handleRemovePlayer(playerId: string): void {
+    setPlayerDrafts((current) => current.filter((player) => player.id !== playerId));
 
-  function handleClearFixedPlayers(): void {
-    setSelectedFixedPlayers([]);
-    setError(null);
+    if (playerId === hostDraft?.id) {
+      const nextHost = playerDrafts.find((player) => player.id !== playerId);
+      if (nextHost) {
+        setHostDraftId(nextHost.id);
+      }
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
@@ -153,13 +217,26 @@ export default function CreateGame(): JSX.Element {
     setIsSubmitting(true);
 
     const gameName = form.gameName.trim();
-    const yourName = form.yourName.trim();
-    const buyIn = Number(form.buyIn.replace(',', '.'));
+    const defaultBuyIn = toMoney(form.buyIn);
     const currency = form.currency.trim() || '€';
-    const participantNames = buildParticipantNames(selectedFixedPlayers, form.participants, yourName);
+    const hostPlayer = hostDraft;
+    const activePlayers = selectedDrafts;
+    const invalidPlayer = activePlayers.find((player) => toMoney(player.buyIn) <= 0);
 
-    if (!gameName || !yourName || !Number.isFinite(buyIn) || buyIn <= 0) {
-      setError('Introduce un nombre de partida, elige quien eres y revisa que la compra inicial sea valida.');
+    if (!gameName || !hostPlayer || !Number.isFinite(defaultBuyIn) || defaultBuyIn <= 0) {
+      setError('Introduce un nombre de partida, elige el anfitrion y revisa la recompra por defecto.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (activePlayers.length === 0) {
+      setError('Marca al menos un jugador para crear la partida.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (invalidPlayer) {
+      setError(`Revisa el importe inicial de ${invalidPlayer.name}.`);
       setIsSubmitting(false);
       return;
     }
@@ -183,7 +260,7 @@ export default function CreateGame(): JSX.Element {
           code,
           name: gameName,
           currency,
-          default_buy_in: buyIn,
+          default_buy_in: defaultBuyIn,
           host_player_id: playerId,
           status: 'lobby'
         });
@@ -201,17 +278,17 @@ export default function CreateGame(): JSX.Element {
           {
             id: playerId,
             room_id: roomId,
-            name: yourName,
-            initial_buy_in: buyIn,
+            name: hostPlayer.name,
+            initial_buy_in: toMoney(hostPlayer.buyIn),
             is_host: true,
             claimed_at: hostClaimedAt,
             claimed_by_device_id: deviceId
           },
-          ...participantNames.map((participantName) => ({
+          ...activePlayers.filter((player) => player.id !== hostPlayer.id).map((player) => ({
             id: crypto.randomUUID(),
             room_id: roomId,
-            name: participantName,
-            initial_buy_in: buyIn,
+            name: player.name,
+            initial_buy_in: toMoney(player.buyIn),
             is_host: false,
             claimed_at: null,
             claimed_by_device_id: null
@@ -227,7 +304,7 @@ export default function CreateGame(): JSX.Element {
 
         saveIdentity({
           playerId,
-          playerName: yourName,
+          playerName: hostPlayer.name,
           roomCode: code,
           isHost: true
         });
@@ -290,44 +367,24 @@ export default function CreateGame(): JSX.Element {
               <div className="field-shell mt-2">
                 <select
                   className="input-base"
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setForm((current) => ({
-                      ...current,
-                      yourName: nextValue === CUSTOM_HOST_VALUE ? '' : nextValue
-                    }));
-                  }}
-                  value={hostSelectValue}
+                  onChange={(event) => handleHostChange(event.target.value)}
+                  value={hostDraft?.id ?? ''}
                 >
-                  {fixedPlayerOptions.map((playerName) => (
-                    <option key={playerName} value={playerName}>
-                      {playerName}
+                  {playerDrafts.map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.name}
                     </option>
                   ))}
-                  <option value={CUSTOM_HOST_VALUE}>Otro nombre</option>
                 </select>
               </div>
+              <p className="mt-2 text-xs text-slate-400">
+                El anfitrion entra automaticamente en la sala y no se duplica en participantes.
+              </p>
             </label>
-
-            {hostSelectValue === CUSTOM_HOST_VALUE ? (
-              <label className="block text-sm font-medium text-slate-300">
-                Nombre del anfitrion
-                <div className="field-shell mt-2">
-                  <input
-                    className="input-base"
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, yourName: event.target.value }))
-                    }
-                    placeholder="Juan"
-                    value={form.yourName}
-                  />
-                </div>
-              </label>
-            ) : null}
 
             <div className="grid gap-5 sm:grid-cols-2">
               <label className="block text-sm font-medium text-slate-300">
-                Compra inicial
+                Recompra por defecto
                 <div className="field-shell mt-2">
                   <input
                     className="input-base"
@@ -339,6 +396,9 @@ export default function CreateGame(): JSX.Element {
                     value={form.buyIn}
                   />
                 </div>
+                <p className="mt-2 text-xs text-slate-400">
+                  Esta cantidad se usara como valor rapido al anadir recompras durante la partida.
+                </p>
               </label>
 
               <label className="block text-sm font-medium text-slate-300">
@@ -359,93 +419,157 @@ export default function CreateGame(): JSX.Element {
             <div className="rounded-3xl border border-emerald-500/10 bg-emerald-500/5 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-white">Jugadores fijos</p>
+                  <p className="text-sm font-semibold text-white">Jugadores de la partida</p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Marca los habituales que juegan hoy. Si viene alguien nuevo, anadelo debajo
-                    como invitado.
+                    Marca quien juega hoy y ajusta la cantidad inicial de cada uno.
                   </p>
                 </div>
                 <span className="w-fit rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                  {selectedFixedPlayers.length} de {fixedPlayerOptions.length} marcados
+                  {selectedDrafts.length} en mesa
                 </span>
               </div>
 
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {fixedPlayerOptions.map((playerName) => {
-                  const checked = selectedFixedPlayers.includes(playerName);
+              <div className="mt-4 space-y-3">
+                {playerDrafts.map((player) => {
+                  const checked = player.enabled || player.id === hostDraft?.id;
+                  const isHost = player.id === hostDraft?.id;
 
                   return (
-                    <label
-                      className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${
+                    <div
+                      className={`rounded-2xl border p-3 transition ${
                         checked
                           ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-50'
                           : 'border-white/10 bg-slate-950/70 text-slate-300'
                       }`}
-                      key={playerName}
+                      key={player.id}
                     >
-                      <input
-                        checked={checked}
-                        className="h-5 w-5 accent-emerald-500"
-                        onChange={() => handleToggleFixedPlayer(playerName)}
-                        type="checkbox"
-                      />
-                      {playerName}
-                    </label>
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_auto] sm:items-center">
+                        <label className="flex min-h-12 cursor-pointer items-center gap-3 text-sm font-semibold">
+                          <input
+                            checked={checked}
+                            className="h-5 w-5 accent-emerald-500"
+                            disabled={isHost}
+                            onChange={() => handleTogglePlayer(player.id)}
+                            type="checkbox"
+                          />
+                          <span>
+                            {player.name}
+                            {isHost ? (
+                              <span className="ml-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-100">
+                                anfitrion
+                              </span>
+                            ) : null}
+                          </span>
+                        </label>
+
+                        <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+                          Inicial
+                          <div className="field-shell mt-1">
+                            <input
+                              className="input-base text-right"
+                              inputMode="decimal"
+                              onChange={(event) => handlePlayerBuyInChange(player.id, event.target.value)}
+                              value={player.buyIn}
+                            />
+                          </div>
+                        </label>
+
+                        {!player.fixed ? (
+                          <button
+                            className="secondary-button border-rose-500/30 px-4 text-rose-100 hover:bg-rose-500/10"
+                            onClick={() => handleRemovePlayer(player.id)}
+                            type="button"
+                          >
+                            Quitar
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
 
               <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <button className="secondary-button px-4" onClick={handleSelectAllFixedPlayers} type="button">
+                <button className="secondary-button px-4" onClick={handleSelectAllPlayers} type="button">
                   Marcar todos
                 </button>
-                <button className="secondary-button px-4" onClick={handleClearFixedPlayers} type="button">
+                <button className="secondary-button px-4" onClick={handleClearPlayers} type="button">
                   Desmarcar todos
                 </button>
               </div>
             </div>
 
-            <label className="block text-sm font-medium text-slate-300">
-              Invitados o jugadores extra
-              <div className="field-shell mt-2">
-                <textarea
-                  className="input-base min-h-[160px] resize-y py-4"
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, participants: event.target.value }))
-                  }
-                  placeholder={'Maria\nLuis\nCarlos'}
-                  value={form.participants}
-                />
+            <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-4">
+              <div>
+                <p className="text-sm font-semibold text-white">Anadir jugador</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Para invitados o alguien que no este en la lista fija.
+                </p>
               </div>
-              <p className="mt-2 text-xs text-slate-400">
-                Puedes dejar esto vacio y crear la partida solo con los fijos marcados. Si escribes
-                aqui, usa un nombre por linea o separalos por comas.
-              </p>
-            </label>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_130px_auto] sm:items-end">
+                <label className="block text-sm font-medium text-slate-300">
+                  Nombre
+                  <div className="field-shell mt-2">
+                    <input
+                      className="input-base"
+                      onChange={(event) =>
+                        setNewPlayer((current) => ({ ...current, name: event.target.value }))
+                      }
+                      placeholder="Nombre"
+                      value={newPlayer.name}
+                    />
+                  </div>
+                </label>
+
+                <label className="block text-sm font-medium text-slate-300">
+                  Inicial
+                  <div className="field-shell mt-2">
+                    <input
+                      className="input-base text-right"
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        setNewPlayer((current) => ({ ...current, buyIn: event.target.value }))
+                      }
+                      value={newPlayer.buyIn}
+                    />
+                  </div>
+                </label>
+
+                <button className="primary-button px-4" onClick={handleAddPlayer} type="button">
+                  Anadir
+                </button>
+              </div>
+            </div>
 
             <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-white">Vista previa de participantes</p>
+                <p className="text-sm font-medium text-white">Vista previa de la mesa</p>
                 <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                  {participantPreview.length + 1} en mesa contando al anfitrion
+                  {selectedDrafts.length} jugadores
                 </span>
               </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-100">
-                  {form.yourName.trim() || 'Anfitrion'}
-                </span>
-                {participantPreview.map((participantName) => (
-                  <span
-                    className="rounded-full border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200"
-                    key={participantName}
+              <div className="mt-4 space-y-2">
+                {selectedDrafts.map((player) => (
+                  <div
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200"
+                    key={player.id}
                   >
-                    {participantName}
-                  </span>
+                    <span className="font-medium">
+                      {player.name}
+                      {player.id === hostDraft?.id ? (
+                        <span className="ml-2 text-xs text-amber-200">anfitrion</span>
+                      ) : null}
+                    </span>
+                    <span className="font-semibold text-emerald-200">
+                      {form.currency.trim() || '€'}
+                      {toMoney(player.buyIn).toFixed(2)}
+                    </span>
+                  </div>
                 ))}
-                {participantPreview.length === 0 ? (
+                {selectedDrafts.length === 0 ? (
                   <span className="rounded-full border border-dashed border-white/10 px-3 py-2 text-sm text-slate-500">
-                    Anade aqui al resto de jugadores si quieres dejarlos preparados antes de
-                    compartir el enlace.
+                    Marca al menos un jugador para crear la partida.
                   </span>
                 ) : null}
               </div>
