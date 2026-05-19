@@ -21,14 +21,17 @@ interface FinalAmountValue {
 interface MismatchAdjustment {
   adjustedValues: FinalAmountValue[];
   adjustments: Record<string, number>;
+  targetCount: number;
 }
 
-type MismatchMode = 'adjust-winners' | 'force';
+type MismatchMode = 'adjust-negative' | 'adjust-positive' | 'force';
+type MismatchTarget = 'negative' | 'positive';
 
-function distributeMismatchBetweenWinners(
+function distributeMismatch(
   values: FinalAmountValue[],
   players: PlayerSummary[],
-  difference: number
+  difference: number,
+  target: MismatchTarget
 ): MismatchAdjustment {
   const byPlayerId = players.reduce<Record<string, PlayerSummary>>((accumulator, player) => {
     accumulator[player.id] = player;
@@ -44,15 +47,10 @@ function distributeMismatchBetweenWinners(
       playerId: value.playerId
     };
   });
-  const winners = provisionalRows.filter((row) => row.balance > 0);
-  const fallbackTargets = provisionalRows
-    .slice()
-    .sort((first, second) => second.finalAmount - first.finalAmount)
-    .slice(0, Math.max(1, Math.min(2, provisionalRows.length)));
-  const targets = winners.length > 0 ? winners : fallbackTargets;
-  const totalWeight = sum(
-    targets.map((target) => (winners.length > 0 ? target.balance : 1))
+  const targets = provisionalRows.filter((row) =>
+    target === 'positive' ? row.balance > 0 : row.balance < 0
   );
+  const totalWeight = sum(targets.map((row) => Math.abs(row.balance)));
   const adjustments = values.reduce<Record<string, number>>((accumulator, value) => {
     accumulator[value.playerId] = 0;
     return accumulator;
@@ -62,19 +60,20 @@ function distributeMismatchBetweenWinners(
   if (targets.length === 0 || totalWeight <= 0) {
     return {
       adjustedValues: values,
-      adjustments
+      adjustments,
+      targetCount: 0
     };
   }
 
-  targets.forEach((target, index) => {
+  targets.forEach((targetRow, index) => {
     const isLastTarget = index === targets.length - 1;
-    const weight = winners.length > 0 ? target.balance : 1;
+    const weight = Math.abs(targetRow.balance);
     const share = isLastTarget
       ? remaining
       : roundCurrency((Math.abs(difference) * weight) / totalWeight);
     const signedShare = difference > 0 ? -share : share;
 
-    adjustments[target.playerId] = roundCurrency(adjustments[target.playerId] + signedShare);
+    adjustments[targetRow.playerId] = roundCurrency(adjustments[targetRow.playerId] + signedShare);
     remaining = roundCurrency(remaining - share);
   });
 
@@ -83,7 +82,8 @@ function distributeMismatchBetweenWinners(
       ...value,
       finalAmount: Math.max(0, roundCurrency(value.finalAmount + adjustments[value.playerId]))
     })),
-    adjustments
+    adjustments,
+    targetCount: targets.length
   };
 }
 
@@ -96,7 +96,7 @@ export default function CloseGameModal({
   players
 }: CloseGameModalProps): JSX.Element | null {
   const [values, setValues] = useState<Record<string, string>>({});
-  const [mismatchMode, setMismatchMode] = useState<MismatchMode>('adjust-winners');
+  const [mismatchMode, setMismatchMode] = useState<MismatchMode>('adjust-positive');
 
   useEffect(() => {
     if (!open) {
@@ -136,15 +136,40 @@ export default function CloseGameModal({
   );
   const difference = roundCurrency(enteredTotal - expectedTotal);
   const hasMismatch = Math.abs(difference) > 0.009;
-  const mismatchAdjustment = useMemo(
-    () => distributeMismatchBetweenWinners(submittedValues, players, difference),
+  const positiveMismatchAdjustment = useMemo(
+    () => distributeMismatch(submittedValues, players, difference, 'positive'),
     [difference, players, submittedValues]
   );
+  const negativeMismatchAdjustment = useMemo(
+    () => distributeMismatch(submittedValues, players, difference, 'negative'),
+    [difference, players, submittedValues]
+  );
+  const canAdjustPositive = positiveMismatchAdjustment.targetCount > 0;
+  const canAdjustNegative = negativeMismatchAdjustment.targetCount > 0;
+  const activeMismatchAdjustment =
+    mismatchMode === 'adjust-negative' ? negativeMismatchAdjustment : positiveMismatchAdjustment;
+  const canUseAdjustment =
+    (mismatchMode === 'adjust-positive' && canAdjustPositive) ||
+    (mismatchMode === 'adjust-negative' && canAdjustNegative);
   const valuesToConfirm =
-    hasMismatch && mismatchMode === 'adjust-winners'
-      ? mismatchAdjustment.adjustedValues
+    hasMismatch && mismatchMode !== 'force' && canUseAdjustment
+      ? activeMismatchAdjustment.adjustedValues
       : submittedValues;
-  const adjustedTotal = sum(mismatchAdjustment.adjustedValues.map((value) => value.finalAmount));
+  const adjustedTotal = sum(activeMismatchAdjustment.adjustedValues.map((value) => value.finalAmount));
+
+  useEffect(() => {
+    if (!hasMismatch || mismatchMode === 'force') {
+      return;
+    }
+
+    if (mismatchMode === 'adjust-positive' && !canAdjustPositive && canAdjustNegative) {
+      setMismatchMode('adjust-negative');
+    }
+
+    if (mismatchMode === 'adjust-negative' && !canAdjustNegative && canAdjustPositive) {
+      setMismatchMode('adjust-positive');
+    }
+  }, [canAdjustNegative, canAdjustPositive, hasMismatch, mismatchMode]);
 
   function handleConfirm(): void {
     void onConfirm(valuesToConfirm, hasMismatch && mismatchMode === 'force');
@@ -217,25 +242,60 @@ export default function CloseGameModal({
             <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
               <p className="text-sm font-semibold text-amber-100">
                 Las cuentas no cuadran. Como suele pasar cuando sobran o faltan fichas, puedes
-                ajustar el descuadre entre los jugadores que van ganando.
+                ajustar el descuadre entre los que van ganando o entre los que van perdiendo.
               </p>
 
               <div className="mt-4 grid gap-3">
-                <label className="flex cursor-pointer gap-3 rounded-2xl border border-emerald-500/20 bg-slate-950/60 p-4 text-sm text-slate-200">
+                <label
+                  className={`flex gap-3 rounded-2xl border border-emerald-500/20 bg-slate-950/60 p-4 text-sm text-slate-200 ${
+                    canAdjustPositive ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                  }`}
+                >
                   <input
-                    checked={mismatchMode === 'adjust-winners'}
+                    checked={mismatchMode === 'adjust-positive'}
                     className="mt-1 h-5 w-5 accent-emerald-500"
-                    onChange={() => setMismatchMode('adjust-winners')}
+                    disabled={!canAdjustPositive}
+                    onChange={() => setMismatchMode('adjust-positive')}
                     type="radio"
                   />
                   <span>
                     <span className="block font-semibold text-white">
-                      Ajustar automaticamente entre ganadores
+                      Ajustar entre positivos
                     </span>
                     <span className="mt-1 block text-slate-400">
                       Si sobra dinero, se resta proporcionalmente a los positivos. Si falta, se suma
                       proporcionalmente a los positivos. Total final:{' '}
-                      {formatCurrency(adjustedTotal, currency)}.
+                      {mismatchMode === 'adjust-positive' && canAdjustPositive
+                        ? formatCurrency(adjustedTotal, currency)
+                        : formatCurrency(expectedTotal, currency)}
+                      .
+                    </span>
+                  </span>
+                </label>
+
+                <label
+                  className={`flex gap-3 rounded-2xl border border-rose-500/20 bg-slate-950/60 p-4 text-sm text-slate-200 ${
+                    canAdjustNegative ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+                  }`}
+                >
+                  <input
+                    checked={mismatchMode === 'adjust-negative'}
+                    className="mt-1 h-5 w-5 accent-rose-500"
+                    disabled={!canAdjustNegative}
+                    onChange={() => setMismatchMode('adjust-negative')}
+                    type="radio"
+                  />
+                  <span>
+                    <span className="block font-semibold text-white">
+                      Ajustar entre negativos
+                    </span>
+                    <span className="mt-1 block text-slate-400">
+                      Si sobra dinero, se resta proporcionalmente a los negativos. Si falta, se suma
+                      proporcionalmente a los negativos. Total final:{' '}
+                      {mismatchMode === 'adjust-negative' && canAdjustNegative
+                        ? formatCurrency(adjustedTotal, currency)
+                        : formatCurrency(expectedTotal, currency)}
+                      .
                     </span>
                   </span>
                 </label>
@@ -256,10 +316,10 @@ export default function CloseGameModal({
                 </label>
               </div>
 
-              {mismatchMode === 'adjust-winners' ? (
+              {mismatchMode !== 'force' && canUseAdjustment ? (
                 <div className="mt-4 space-y-2 text-sm">
                   {players
-                    .filter((player) => Math.abs(mismatchAdjustment.adjustments[player.id] ?? 0) > 0.009)
+                    .filter((player) => Math.abs(activeMismatchAdjustment.adjustments[player.id] ?? 0) > 0.009)
                     .map((player) => (
                       <div
                         className="flex items-center justify-between gap-4 rounded-xl bg-slate-950/60 px-3 py-2 text-slate-200"
@@ -268,12 +328,12 @@ export default function CloseGameModal({
                         <span>{player.name}</span>
                         <span
                           className={
-                            (mismatchAdjustment.adjustments[player.id] ?? 0) >= 0
+                            (activeMismatchAdjustment.adjustments[player.id] ?? 0) >= 0
                               ? 'font-semibold text-emerald-300'
                               : 'font-semibold text-rose-300'
                           }
                         >
-                          {formatSignedCurrency(mismatchAdjustment.adjustments[player.id] ?? 0, currency)}
+                          {formatSignedCurrency(activeMismatchAdjustment.adjustments[player.id] ?? 0, currency)}
                         </span>
                       </div>
                     ))}
@@ -292,8 +352,10 @@ export default function CloseGameModal({
               {loading
                 ? 'Cerrando partida...'
                 : hasMismatch
-                  ? mismatchMode === 'adjust-winners'
-                    ? 'Ajustar descuadre y cerrar'
+                  ? mismatchMode === 'adjust-positive'
+                    ? 'Ajustar en positivos y cerrar'
+                    : mismatchMode === 'adjust-negative'
+                      ? 'Ajustar en negativos y cerrar'
                     : 'Forzar cierre igualmente'
                   : 'Confirmar y calcular pagos'}
             </button>
