@@ -5,29 +5,35 @@ import { getPlayerProfile } from '../lib/playerProfiles';
 interface PlayerAvatarProps {
   className?: string;
   name: string;
-  size?: 'sm' | 'md' | 'lg';
+  photoSize?: AvatarSize;
+  size?: AvatarSize;
 }
 
-const SIZE_CLASSES: Record<NonNullable<PlayerAvatarProps['size']>, string> = {
+type AvatarSize = 'sm' | 'md' | 'lg' | 'hero';
+
+const SIZE_CLASSES: Record<AvatarSize, string> = {
   sm: 'h-10 w-10 text-sm',
   md: 'h-12 w-12 text-base',
-  lg: 'h-16 w-16 text-xl'
+  lg: 'h-16 w-16 text-xl',
+  hero: 'h-28 w-28 text-2xl sm:h-32 sm:w-32'
 };
 
 export default function PlayerAvatar({
   className = '',
   name,
+  photoSize,
   size = 'md'
 }: PlayerAvatarProps): JSX.Element {
   const [imageFailed, setImageFailed] = useState(false);
   const profile = getPlayerProfile(name);
-  const sizeClass = SIZE_CLASSES[size];
+  const hasPhoto = Boolean(profile.photoUrl) && !imageFailed;
+  const sizeClass = SIZE_CLASSES[hasPhoto ? photoSize ?? size : size];
 
-  if (profile.photoUrl && !imageFailed) {
+  if (hasPhoto && profile.photoUrl) {
     return (
       <img
         alt={`Foto de ${name}`}
-        className={`${sizeClass} rounded-2xl border border-white/10 object-cover shadow-lg shadow-slate-950/30 ${className}`}
+        className={`${sizeClass} shrink-0 rounded-2xl border border-white/10 object-cover shadow-lg shadow-slate-950/30 ${className}`}
         onError={() => setImageFailed(true)}
         src={profile.photoUrl}
       />

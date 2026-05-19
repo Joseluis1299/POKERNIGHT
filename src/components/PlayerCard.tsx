@@ -64,9 +64,9 @@ export default function PlayerCard({
     <article
       className={`rounded-[1.75rem] border border-white/10 bg-slate-900/90 p-5 shadow-xl shadow-slate-950/40 transition ${flash ? 'balance-flash' : ''}`}
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <PlayerAvatar name={player.name} size="lg" />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+        <div className="flex items-start gap-4">
+          <PlayerAvatar name={player.name} photoSize="hero" size="lg" />
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-xl font-semibold text-white">{player.name}</h3>
@@ -80,7 +80,7 @@ export default function PlayerCard({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 text-sm sm:w-[320px]">
+        <div className="grid grid-cols-2 gap-3 text-sm">
           <Stat label="Compra inicial" value={formatCurrency(player.initial_buy_in, currency)} />
           <Stat label="Recompras" value={`${player.rebuyCount} · ${formatCurrency(player.totalRebuyAmount, currency)}`} />
           <Stat label="Aportado" value={formatCurrency(player.totalContributed, currency)} />
