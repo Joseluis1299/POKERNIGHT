@@ -15,7 +15,7 @@ const SIZE_CLASSES: Record<AvatarSize, string> = {
   sm: 'h-10 w-10 text-sm',
   md: 'h-12 w-12 text-base',
   lg: 'h-16 w-16 text-xl',
-  hero: 'h-28 w-28 text-2xl sm:h-32 sm:w-32'
+  hero: 'h-36 w-36 text-2xl sm:h-44 sm:w-44 lg:h-48 lg:w-48'
 };
 
 export default function PlayerAvatar({
@@ -33,7 +33,7 @@ export default function PlayerAvatar({
     return (
       <img
         alt={`Foto de ${name}`}
-        className={`${sizeClass} shrink-0 rounded-2xl border border-white/10 object-cover shadow-lg shadow-slate-950/30 ${className}`}
+        className={`${sizeClass} shrink-0 rounded-3xl border border-white/10 object-cover shadow-lg shadow-slate-950/30 ${className}`}
         onError={() => setImageFailed(true)}
         src={profile.photoUrl}
       />
